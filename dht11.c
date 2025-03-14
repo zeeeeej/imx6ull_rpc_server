@@ -18,12 +18,12 @@ void *dht11_thread(void * arg){
 		while(1){
 		  if (read(fd, buf, 2) == 2)
 			    {
-			      g_humi = buf[0];
-			      g_temp = buf[1];
+			      g_humi = buf[1];
+			      g_temp = buf[0];
 			      
 
 			    }
-			sleep(2);
+			sleep(1);
 
 		}
 	
