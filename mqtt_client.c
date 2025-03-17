@@ -10,111 +10,21 @@
 #include <errno.h>
 #include <stdlib.h>
 #include <pthread.h>
-#include "dht11.h"
-#include "led.h"
 #include "cfg.h"
 #include <MQTTClient.h>
+#include "rpc_client.h"
 #include "cJSON.h"
-#include <jsonrpc-c.h>
-
-static struct jrpc_server my_server;
-#define PORT 			1234
 
 #define QOS        		0
 #define TOPIC_UP 		"/iot/up"
 #define TOPIC_DOWN 		"/iot/down"
 #define CA_CERTIFICATE_FILE_Path "/etc/mqtt.crt"
+#define FREQ_UP 		2
 
 
-
-
-// cache
-static volatile int cache_humi = -1;
-static volatile int cache_temp = -1;
-static volatile char cache_led = -1;
-// cache end
-
-
-
-/*
- * rpc_led_control
- * params:{"params":[0|1]}
- */
-cJSON * server_led_control(jrpc_context * ctx, cJSON * params, cJSON *id) {
-    
-    cJSON *status = cJSON_GetArrayItem(params, 0);
-    led_control(status->valueint);
-    cache_led = status->valueint;
-    return cJSON_CreateNumber(0);
-}
-
-/*
- * rpc_dht11_read
- * return:{"params":[humi,temp]}
- */
-cJSON * server_dht11_read(jrpc_context * ctx, cJSON * params, cJSON *id) {
-    int array[2] = {(int)cache_humi,(int)cache_temp};
-    return cJSON_CreateIntArray(array,2);
-}
-
-
-void * dht11_read_thread(void * arg){
-    int humi;
-    int temp;
-    char led;
-    while(1)
-    {
-    
-    	while(0!=dht11_read(&humi,&temp)){
-    		sleep(1);
-   	}
-   	cache_humi = (int)humi;
-    	cache_temp = (int)temp;
-	while(0!=led_read(&led));
-	cache_led = led;   
-	//printf("rpc server dht11_read humi:%d,temp:%d\n",humi,temp);
-	sleep(1);
-    }
-    return NULL;
-}
-
-/**
- * rpc_led_read
- * return :{"params":1}
- *
- */
-
-cJSON * server_led_read(jrpc_context * ctx, cJSON * params, cJSON *id) {
-    return cJSON_CreateNumber((int)cache_led);
-}
-
-int RPC_Server_Init(void) 
-{
-    printf("<<<<<<<<< rpc_server_init <<<<<<<<<<<<\n");
-    int err;
-    err = jrpc_server_init(&my_server, PORT);
-    if (err)
-    {
-        printf("jrpc_server_init err : %d\n", err);
-    }
-    
-    jrpc_register_procedure(&my_server, server_led_control, "led_control", NULL );
-    jrpc_register_procedure(&my_server, server_dht11_read, "dht11_read", NULL );
-    jrpc_register_procedure(&my_server, server_led_read, "led_read", NULL );
-	
-    pthread_t threadId;
-    int result = pthread_create(&threadId, NULL, dht11_read_thread, NULL);
-    if (result != 0) {
-        printf("Failed to create thread!\n");
-        return 1;
-    }    
-	
-    jrpc_server_run(&my_server);
-    jrpc_server_destroy(&my_server);
-
-    return 0;
-}
-
+int cache_temp;
+int cache_humi;
+int cache_led;
 
 /* MQTT START*/
 static MQTTClient client;
@@ -131,18 +41,18 @@ MQTTClient_SSLOptions configureSSLOptions() {
 
 void delivered(void *context, MQTTClient_deliveryToken dt)
 {
-    printf("Message with token value %d delivery confirmed\n", dt);
+    printf("[mqtt]Message with token value %d delivery confirmed\n", dt);
     deliveredtoken = dt;
 }
 int msgarrvd(void *context, char *topicName, int topicLen, MQTTClient_message *message)
 {
-	printf("======> mqtt msgarrvd !\n");
+	printf("[mqtt]mqtt msgarrvd !\n");
 	int rc;
     int i;
     char* payloadptr;
-    printf("Message arrived\n");
-    printf("     topic: %s\n", topicName);
-    printf("   message: ");
+    printf("[mqtt]Message arrived\n");
+    printf("[mqtt]     topic: %s\n", topicName);
+    printf("[mqtt]   message: ");
     payloadptr = message->payload;
     /* 解析控制设备 */
 	/* 消息格式：{"cmd":"set","params":{"led0":1}} */
@@ -152,7 +62,7 @@ int msgarrvd(void *context, char *topicName, int topicLen, MQTTClient_message *m
 	if(params){
 		cJSON *led0 = cJSON_GetObjectItem(params,"led0");
 		if(led0){
-			led_control(led0->valueint);
+			rpc_led_control(led0->valueint);
 		}
 	}
 	cJSON_Delete(root);
@@ -164,8 +74,8 @@ int msgarrvd(void *context, char *topicName, int topicLen, MQTTClient_message *m
 }
 void connlost(void *context, char *cause)
 {
-    printf("\nConnection lost\n");
-    printf("     cause: %s\n", cause);
+    printf("[mqtt]\nConnection lost\n");
+    printf("[mqtt]     cause: %s\n", cause);
 }
 
 void*publish_thread(void*arg){
@@ -173,19 +83,28 @@ void*publish_thread(void*arg){
 
 	while(1){
 
-		int humi = cache_humi;
-		int temp = cache_temp;
-		int led0 = cache_led;
+		int humi ;
+		int temp ;
+		int led0 ;
+		while(0!=rpc_dht11_read(&humi,&temp));
+		while(0!=rpc_led_read(&led0));
 		/* read */
-		printf("mqtt read for publish -> humi:%d,temp:%d,led:%d\n",humi,temp,led0);
+		
+		if(cache_humi !=humi || cache_temp != temp || cache_led != led0){
+				cache_humi = humi;
+				cache_temp = temp;
+				cache_led = led0;
+
+				printf("[mqtt]read for publish -> humi:%d,temp:%d,led:%d\n",humi,temp,led0);
 				
 				MQTTClient_message pubmsg = MQTTClient_message_initializer;
-				char * PAYLOAD = "\
+				char * PAYLOAD = "{\
 						\"cmd\":\"report\",\
 						\"params\":{\
 							\"humi\":\"%d\",\
 							\"temp\":\"%d\",\
 							\"led0\":\"%d\"\
+						}\
 						}\
 					";
 				sprintf(buf,PAYLOAD,humi,temp,led0);
@@ -194,7 +113,8 @@ void*publish_thread(void*arg){
 				pubmsg.qos = QOS;
 				pubmsg.retained = 0;
 				MQTTClient_publishMessage(client, TOPIC_UP, &pubmsg,(MQTTClient_deliveryToken*) &deliveredtoken);
-		sleep(5);
+		}
+		sleep(FREQ_UP);
 	}
 	return NULL;
 }
@@ -208,7 +128,7 @@ void* mqtt_init_thread(void * arg){
 
 void mqtt_init(){
 
-	printf("<<<<<<<<< mqtt_init <<<<<<<<<<<<\n");
+	printf("[mqtt]mqtt_init\n");
 	/* 1.读取mqtt配置文件 */
 	char uri[1000];
 	char clientId[1000];
@@ -219,7 +139,7 @@ void mqtt_init(){
 	int index=0;
 	while(index<5){
 		if(0!=mqtt_read_cfg( uri,  clientId, username,  password,  productKey,  deviceName)){
-			printf("mqtt_read_cfg fail\n");
+			printf("[mqtt]mqtt_read_cfg fail\n");
 			sleep(1);
 			index++;
 		}else{
@@ -227,26 +147,25 @@ void mqtt_init(){
 		}
 	}
 	/* 链接mqtt */
-	printf("======> mqtt start imx6ull sync !\n");
 	int rc;
 	MQTTClient_create(&client, uri, clientId, MQTTCLIENT_PERSISTENCE_NONE, NULL);
  	MQTTClient_setCallbacks(client, NULL, connlost, msgarrvd, delivered);
 	MQTTClient_connectOptions conn_opts = MQTTClient_connectOptions_initializer;
 	conn_opts.username = username;
 	conn_opts.password = password;
-	printf("mqtt version :%d\n",conn_opts.MQTTVersion);
 	//conn_opts.MQTTVersion = MQTTVERSION_5;
 	conn_opts.MQTTVersion = MQTTVERSION_3_1_1;
+	printf("[mqtt]mqtt version :%d\n",conn_opts.MQTTVersion);
 	MQTTClient_SSLOptions ssl_opts = configureSSLOptions();
 	conn_opts.ssl = &ssl_opts;
 	// 
 	while(1){
 		if ((rc = MQTTClient_connect(client, &conn_opts)) != MQTTCLIENT_SUCCESS) {
-    			printf("Failed to connect, return code %d\n", rc);
+    			printf("[mqtt]Failed to connect, return code %d\n", rc);
 		//	exit(-1);
 			sleep(1);
 		} else {
-   	 		printf("Connected to MQTT Broker!\n");
+   	 		printf("[mqtt]Connected to MQTT Broker!\n");
 			break;
 		}
 	}
@@ -255,15 +174,16 @@ void mqtt_init(){
 	/* 读取led 温湿度信息，发布到broker	*/
 	pthread_t thread_id;
 	int ret = pthread_create(&thread_id,NULL,publish_thread,NULL);
-	printf("create publish thread ret = %d\n",ret);
+	//printf("create publish thread ret = %d\n",ret);
 	/* 订阅消息 控制设备 */
 	printf("Subscribing to topic %s for client %s using QoS%d\n\n", TOPIC_DOWN, clientId, QOS);
         MQTTClient_subscribe(client, TOPIC_DOWN, QOS);
 	
 	MQTTClient_waitForCompletion(client,deliveredtoken,10000);
-//	MQTTClient_disconnect(client, 10000);
-   // MQTTClient_destroy(&client);
-	printf(">>>>>>>>>>>>>>>>>>>>>>>> mqtt_init end!!!!!!!!\n");
+   	pthread_join(thread_id,NULL);
+	printf("[mqtt]>>>>>>>>>>>>>>>>>>>>>>>> mqtt_init end!!!!!!!!\n");
+	MQTTClient_disconnect(client, 10000);
+   	MQTTClient_destroy(&client);
 	
 }
 
@@ -272,13 +192,10 @@ void mqtt_init(){
 
 int main(int argc, char **argv)
 {
-	printf("<<<<<<<<< led_init <<<<<<<<<<<<\n");
-	led_init();
-	printf("<<<<<<<<< dht11_init <<<<<<<<<<<<\n");
-	dht11_init();	
+	printf("[mqtt]rpc_client init.\n");
+	RPC_Client_Init();
 	pthread_t mqtt_init_t;
 	pthread_create(&mqtt_init_t,NULL,mqtt_init_thread,NULL);
-	RPC_Server_Init();
 	pthread_join(mqtt_init_t,NULL);
 	return 0;
 }
