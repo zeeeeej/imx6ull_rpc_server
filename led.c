@@ -9,7 +9,7 @@
 
 static int fd;
 
-static unsigned char my_status=0;
+static char  my_status = -1;
 
 /*
  * ./led_test <0|1|2|..>  on
@@ -38,14 +38,20 @@ void led_control(int on)
     buf[0]=0;
     if(on){
         buf[1] = 0;
-	my_status = 0;
     }else{
-      buf[1] = 1;
-      my_status = 1;
+        buf[1] = 1;
     }
-    write(fd,buf,2);
+   int ret =  write(fd,buf,2);
+   if(ret){
+   	if(on){
+		my_status = 1;
+	}else{
+		my_status = 0;
+	}
+   }
 }
 
-int led_read(unsigned char*status){
+int led_read(char *status){
     *status = my_status;
+    return 0;
 }

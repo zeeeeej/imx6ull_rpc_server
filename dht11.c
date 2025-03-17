@@ -9,7 +9,7 @@
 #include <pthread.h>
 
 static int fd;
-static unsigned char g_humi,g_temp;
+static volatile int g_humi,g_temp;
 
 void *dht11_thread(void * arg){
    unsigned char buf[2] ={0};
@@ -42,7 +42,7 @@ void dht11_init(){
 }
 
 
- int dht11_read(unsigned char*temp,unsigned char*humi)
+ int dht11_read(int *temp,int *humi)
 {
 	*humi = g_humi;
 	*temp = g_temp;

@@ -29,9 +29,9 @@ static struct jrpc_server my_server;
 
 
 // cache
-static int cache_humi = -1;
-static int cache_temp = -1;
-static int cache_led = -1;
+static volatile int cache_humi = -1;
+static volatile int cache_temp = -1;
+static volatile char cache_led = -1;
 // cache end
 
 
@@ -59,19 +59,21 @@ cJSON * server_dht11_read(jrpc_context * ctx, cJSON * params, cJSON *id) {
 
 
 void * dht11_read_thread(void * arg){
-    unsigned char humi;
-    unsigned char temp;
+    int humi;
+    int temp;
+    char led;
     while(1)
     {
     
     	while(0!=dht11_read(&humi,&temp)){
     		sleep(1);
    	}
-   	//printf("rpc server dht11_read humi:%d,temp:%d\n",humi,temp);
    	cache_humi = (int)humi;
     	cache_temp = (int)temp;
+	while(0!=led_read(&led));
+	cache_led = led;   
+	//printf("rpc server dht11_read humi:%d,temp:%d\n",humi,temp);
 	sleep(1);
-    
     }
     return NULL;
 }
@@ -83,8 +85,6 @@ void * dht11_read_thread(void * arg){
  */
 
 cJSON * server_led_read(jrpc_context * ctx, cJSON * params, cJSON *id) {
-//	unsigned char status;
-//    while(0!=led_read(&status));
     return cJSON_CreateNumber((int)cache_led);
 }
 
@@ -100,7 +100,7 @@ int RPC_Server_Init(void)
     
     jrpc_register_procedure(&my_server, server_led_control, "led_control", NULL );
     jrpc_register_procedure(&my_server, server_dht11_read, "dht11_read", NULL );
-    //jrpc_register_procedure(&my_server, server_led_read, "led_read", NULL );
+    jrpc_register_procedure(&my_server, server_led_read, "led_read", NULL );
 	
     pthread_t threadId;
     int result = pthread_create(&threadId, NULL, dht11_read_thread, NULL);
@@ -173,12 +173,12 @@ void*publish_thread(void*arg){
 
 	while(1){
 
-		unsigned char humi,temp,led0;
+		int humi = cache_humi;
+		int temp = cache_temp;
+		int led0 = cache_led;
 		/* read */
-		int ret =  dht11_read(&temp,&humi);
-		int ret2 =  led_read(&led0);
-		if(ret==0 && ret2==0){
-				printf("publishing...\n");
+		printf("mqtt read for publish -> humi:%d,temp:%d,led:%d\n",humi,temp,led0);
+				
 				MQTTClient_message pubmsg = MQTTClient_message_initializer;
 				char * PAYLOAD = "\
 						\"cmd\":\"report\",\
@@ -188,13 +188,12 @@ void*publish_thread(void*arg){
 							\"led0\":\"%d\"\
 						}\
 					";
-				sprintf(buf,humi,temp,led0);
+				sprintf(buf,PAYLOAD,humi,temp,led0);
 				pubmsg.payload = buf;
 				pubmsg.payloadlen = strlen(buf);
 				pubmsg.qos = QOS;
 				pubmsg.retained = 0;
-				MQTTClient_publishMessage(client, TOPIC_UP, &pubmsg, &deliveredtoken);
-		}
+				MQTTClient_publishMessage(client, TOPIC_UP, &pubmsg,(MQTTClient_deliveryToken*) &deliveredtoken);
 		sleep(5);
 	}
 	return NULL;
@@ -278,7 +277,7 @@ int main(int argc, char **argv)
 	printf("<<<<<<<<< dht11_init <<<<<<<<<<<<\n");
 	dht11_init();	
 	pthread_t mqtt_init_t;
-	pthread_create(&mqtt_init_t,NULL,mqtt_init,NULL);
+	pthread_create(&mqtt_init_t,NULL,mqtt_init_thread,NULL);
 	RPC_Server_Init();
 	pthread_join(mqtt_init_t,NULL);
 	return 0;

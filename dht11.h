@@ -4,7 +4,7 @@
 
 
     void dht11_init();
-    int dht11_read(unsigned char*temp,unsigned char*humi);
+    int dht11_read(int*temp,int*humi);
 
 
 #endif // DHT11_H
