@@ -90,6 +90,7 @@ cJSON * server_led_read(jrpc_context * ctx, cJSON * params, cJSON *id) {
 
 int RPC_Server_Init(void) 
 {
+    printf("<<<<<<<<< rpc_server_init <<<<<<<<<<<<\n");
     int err;
     err = jrpc_server_init(&my_server, PORT);
     if (err)
@@ -199,10 +200,16 @@ void*publish_thread(void*arg){
 	return NULL;
 }
 
+void mqtt_init();
 
+void* mqtt_init_thread(void * arg){
+	mqtt_init();
+	return NULL;
+}
 
 void mqtt_init(){
 
+	printf("<<<<<<<<< mqtt_init <<<<<<<<<<<<\n");
 	/* 1.读取mqtt配置文件 */
 	char uri[1000];
 	char clientId[1000];
@@ -252,7 +259,7 @@ void mqtt_init(){
 	printf("create publish thread ret = %d\n",ret);
 	/* 订阅消息 控制设备 */
 	printf("Subscribing to topic %s for client %s using QoS%d\n\n", TOPIC_DOWN, clientId, QOS);
-    MQTTClient_subscribe(client, TOPIC_DOWN, QOS);
+        MQTTClient_subscribe(client, TOPIC_DOWN, QOS);
 	
 	MQTTClient_waitForCompletion(client,deliveredtoken,10000);
 //	MQTTClient_disconnect(client, 10000);
@@ -270,10 +277,10 @@ int main(int argc, char **argv)
 	led_init();
 	printf("<<<<<<<<< dht11_init <<<<<<<<<<<<\n");
 	dht11_init();	
-	printf("<<<<<<<<< mqtt_init <<<<<<<<<<<<\n");
-	mqtt_init();
-	printf("<<<<<<<<< rpc_server_init <<<<<<<<<<<<\n");
+	pthread_t mqtt_init_t;
+	pthread_create(&mqtt_init_t,NULL,mqtt_init,NULL);
 	RPC_Server_Init();
+	pthread_join(mqtt_init_t,NULL);
 	return 0;
 }
 
