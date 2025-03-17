@@ -27,12 +27,12 @@ void led_init()
     }
 }
 
-void led_control(int on)
+int led_control(int on)
 {
     char buf[2];
     if(fd<0){
         printf( "led_control /dev/100ask_led not opened.");
-        return;
+        return -1;
     }
     // open first led.
     buf[0]=0;
@@ -49,6 +49,7 @@ void led_control(int on)
 		my_status = 0;
 	}
    }
+   return 0;
 }
 
 int led_read(char *status){

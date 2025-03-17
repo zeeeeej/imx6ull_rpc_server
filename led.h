@@ -5,7 +5,7 @@
 
 
     void led_init();
-    void led_control(int on);
+    int led_control(int on);
 
     int led_read(char*status);
 

@@ -99,7 +99,10 @@ int RPC_Server_Init(void)
         printf("[rpc]Failed to create thread!\n");
         return 1;
     }    
-	
+
+    while(0!=     led_control(0));
+    cache_led =0;
+    
     jrpc_server_run(&my_server);
     jrpc_server_destroy(&my_server);
 
