@@ -17,7 +17,7 @@
 
 static struct jrpc_server my_server;
 #define PORT 			1234
-
+#define VERSION 		6
 // properties cache
 static volatile int cache_humi = -1;
 static volatile int cache_temp = -1;
@@ -30,7 +30,7 @@ static volatile char cache_led = -1;
  */
 cJSON * server_led_control(jrpc_context * ctx, cJSON * params, cJSON *id) {
     cJSON *status = cJSON_GetArrayItem(params, 0);
-    printf("[rpc]server_led_control %d",status);
+    printf("[rpc]server_led_control %d =>version:%d",status,VERSION);
     led_control(status->valueint);
     cache_led = status->valueint;
     return cJSON_CreateNumber(0);
@@ -54,6 +54,16 @@ cJSON * server_dht11_read(jrpc_context * ctx, cJSON * params, cJSON *id) {
 cJSON * server_led_read(jrpc_context * ctx, cJSON * params, cJSON *id) {
     return cJSON_CreateNumber((int)cache_led);
 }
+/**
+ * rpc_heartbeat
+ * return :{"params":"ping"}
+ *
+ */
+#define PING "ping"
+cJSON * server_heartbeat(jrpc_context * ctx, cJSON * params, cJSON *id) {
+    return cJSON_CreateString(PING);
+}
+
 
 /**
  * thread for update properties
@@ -81,7 +91,7 @@ void * dht11_read_thread(void * arg){
 
 int RPC_Server_Init(void) 
 {
-    printf("[rpc]rpc_server_init.\n");
+    printf("[rpc]rpc_server_init.version:%d. \n",VERSION);
     int err;
     err = jrpc_server_init(&my_server, PORT);
     if (err)
@@ -92,6 +102,7 @@ int RPC_Server_Init(void)
     jrpc_register_procedure(&my_server, server_led_control, "led_control", NULL );
     jrpc_register_procedure(&my_server, server_dht11_read, "dht11_read", NULL );
     jrpc_register_procedure(&my_server, server_led_read, "led_read", NULL );
+    jrpc_register_procedure(&my_server, server_heartbeat, "heartbeat", NULL );
 	
     pthread_t threadId;
     int result = pthread_create(&threadId, NULL, dht11_read_thread, NULL);
