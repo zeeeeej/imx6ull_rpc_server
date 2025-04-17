@@ -1,0 +1,17 @@
+TARGET=core_plugin.so
+CC=arm-buildroot-linux-gnueabihf-gcc
+
+LIBEV_DIR=/home/book/Desktop/jsonrpc2/libev_pc/tmp
+JSONRPC_DIR=/home/book/Desktop/jsonrpc2/jsonrpc-c_pc/tmp
+
+CFLAGS=-I${LIBEV_DIR}/include -I${JSONRPC_DIR}/include -I/home/book/proj/hdinit/
+LDFLAGS=-L${JSONRPC_DIR}/lib/libjsonrpcc.a  -L${LIBEV_DIR}/lib/libev.a -L/home/book/proj/hdinit/.shared/build/libhsi.so -lm -lpthread -lhsi
+
+c_files = cJSON.c rpc_server_plugin.c led.c dht11.c
+
+all:
+	${CC} ${CFLAGS} -shared  -o ${TARGET} ${c_files} ${LDFLAGS}
+
+clean:
+	rm -f *.o ${TARGET}
+	

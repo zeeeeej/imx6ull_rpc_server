@@ -14,7 +14,7 @@
 #include "led.h"
 #include "cJSON.h"
 #include <jsonrpc-c.h>
-#include "hd_service_interface.h"
+#include "hdmain.h"
 
 static struct jrpc_server my_server;
 #define PORT 			1234
@@ -121,15 +121,33 @@ int RPC_Server_Init(void)
     return 0;
 }
 
-int main(int argc, char * argv[])
-{
-    hd_service_interface_init(argv[1],"hdmain","1.0.0",5,NULL);
-	printf("[rpc]led_init.\n");
+// 插件自主控制的业务逻辑
+plugin_status_t plugin_entry(void) {
+    static int count = 0;
+
+    // 示例业务逻辑
+    printf("Processing business logic (%d)...\n", ++count);
+    sleep(1);
+ 	printf("[rpc]led_init.\n");
 	led_init();
 	printf("[rpc]dht11_init.\n");
 	dht11_init();	
-	RPC_Server_Init();
-	return 0;
+	RPC_Server_Init();   
+    // 插件自行决定是否继续
+    if (count >= 10) {
+        printf("Business logic completed\n");
+        return PLUGIN_EXIT;
+    }
+
+    return PLUGIN_CONTINUE;
 }
+
+// 必须导出的符号
+__attribute__((visibility("default")))
+plugin_status_t plugin_entry(void);
+
+
+
+
 
 

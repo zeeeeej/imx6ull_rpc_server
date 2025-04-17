@@ -14,7 +14,7 @@
 #include "led.h"
 #include "cJSON.h"
 #include <jsonrpc-c.h>
-#include "hd_service_interface.h"
+#include <hd_service_interface.h>
 
 static struct jrpc_server my_server;
 #define PORT 			1234
@@ -123,7 +123,7 @@ int RPC_Server_Init(void)
 
 int main(int argc, char * argv[])
 {
-    hd_service_interface_init(argv[1],"hdmain","1.0.0",5,NULL);
+    hd_service_interface_init(argv[1],"hdserver","1.0.0",5,NULL);
 	printf("[rpc]led_init.\n");
 	led_init();
 	printf("[rpc]dht11_init.\n");
